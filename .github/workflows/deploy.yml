@@ -1,3 +1,4 @@
+
 name: Deploy WordPress
 
 on:
@@ -5,26 +6,46 @@ on:
     branches:
       - main
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
-  deploy:
+  package-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Package WordPress files
+        run: |
+          tar \
+            --exclude=.git \
+            --exclude=.github \
+            --exclude=wp-config.php \
+            --exclude=wp-content/uploads \
+            --exclude=.env \
+            --exclude=.env.* \
+            -czf /tmp/wordpress-package.tar.gz .
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wordpress-package
+          path: /tmp/wordpress-package.tar.gz
 
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY_B64 }}" | base64 -d > ~/.ssh/wp_key.pem
-          chmod 600 ~/.ssh/wp_key.pem
+          echo "${{ secrets.SSH_PRIVATE_KEY_B64 }}" | base64 -d > ~/.ssh/wp_key
+          chmod 600 ~/.ssh/wp_key
 
           cat > ~/.ssh/config <<EOF
           Host bastion
             HostName ${{ secrets.BASTION_HOST }}
             User ubuntu
             Port 2222
-            IdentityFile ~/.ssh/wp_key.pem
+            IdentityFile ~/.ssh/wordpress_key
             StrictHostKeyChecking no
             UserKnownHostsFile /dev/null
 
@@ -32,7 +53,7 @@ jobs:
             HostName ${{ secrets.PRIVATE_HOST }}
             User ubuntu
             Port 2222
-            IdentityFile ~/.ssh/wp_key.pem
+            IdentityFile ~/.ssh/wordpress_key
             ProxyJump bastion
             StrictHostKeyChecking no
             UserKnownHostsFile /dev/null
@@ -43,9 +64,9 @@ jobs:
           ssh bastion "echo Bastion OK"
           ssh privateec2 "echo Private EC2 OK"
 
-      - name: Deploy using rsync (only changed files)
+      - name: Deploy only changed files with rsync
         run: |
-          rsync -avz --delete \
+          rsync -avz --no-times --delete \
             --rsync-path="sudo rsync" \
             --exclude='.git/' \
             --exclude='.github/' \
@@ -56,11 +77,6 @@ jobs:
             -e "ssh" \
             ./ privateec2:/var/www/html/
 
-      - name: Fix permissions & restart Apache
+      - name: Fix permissions and restart Apache
         run: |
-          ssh privateec2 "
-            sudo chown -R www-data:www-data /var/www/html &&
-            sudo find /var/www/html -type d -exec chmod 755 {} \; &&
-            sudo find /var/www/html -type f -exec chmod 644 {} \; &&
-            sudo systemctl restart apache2
-          "
+          ssh privateec2 "sudo chown -R www-data:www-data /var/www/html && sudo find /var/www/html -type d -exec chmod 755 {} \; && sudo find /var/www/html -type f -exec chmod 644 {} \; && sudo systemctl restart apache2"
