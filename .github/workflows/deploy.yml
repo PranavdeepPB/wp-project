@@ -37,7 +37,7 @@ jobs:
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY_B64 }}" | base64 -d > ~/.ssh/wp_key
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/wp_key.pem
           chmod 600 ~/.ssh/wp_key
 
           cat > ~/.ssh/config <<EOF
