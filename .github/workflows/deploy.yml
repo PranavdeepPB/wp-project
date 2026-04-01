@@ -1,0 +1,66 @@
+name: Deploy WordPress
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY_B64 }}" | base64 -d > ~/.ssh/wp_key.pem
+          chmod 600 ~/.ssh/wp_key.pem
+
+          cat > ~/.ssh/config <<EOF
+          Host bastion
+            HostName ${{ secrets.BASTION_HOST }}
+            User ubuntu
+            Port 2222
+            IdentityFile ~/.ssh/wp_key.pem
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+
+          Host privateec2
+            HostName ${{ secrets.PRIVATE_HOST }}
+            User ubuntu
+            Port 2222
+            IdentityFile ~/.ssh/wp_key.pem
+            ProxyJump bastion
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+          EOF
+
+      - name: Test SSH connectivity
+        run: |
+          ssh bastion "echo Bastion OK"
+          ssh privateec2 "echo Private EC2 OK"
+
+      - name: Deploy using rsync (only changed files)
+        run: |
+          rsync -avz --delete \
+            --rsync-path="sudo rsync" \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='wp-config.php' \
+            --exclude='wp-content/uploads/' \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            -e "ssh" \
+            ./ privateec2:/var/www/html/
+
+      - name: Fix permissions & restart Apache
+        run: |
+          ssh privateec2 "
+            sudo chown -R www-data:www-data /var/www/html &&
+            sudo find /var/www/html -type d -exec chmod 755 {} \; &&
+            sudo find /var/www/html -type f -exec chmod 644 {} \; &&
+            sudo systemctl restart apache2
+          "
