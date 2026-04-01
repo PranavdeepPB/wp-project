@@ -45,7 +45,7 @@ jobs:
             HostName ${{ secrets.BASTION_HOST }}
             User ubuntu
             Port 2222
-            IdentityFile ~/.ssh/wordpress_key
+            IdentityFile ~/.ssh/wp_key
             StrictHostKeyChecking no
             UserKnownHostsFile /dev/null
 
@@ -53,7 +53,7 @@ jobs:
             HostName ${{ secrets.PRIVATE_HOST }}
             User ubuntu
             Port 2222
-            IdentityFile ~/.ssh/wordpress_key
+            IdentityFile ~/.ssh/wp_key
             ProxyJump bastion
             StrictHostKeyChecking no
             UserKnownHostsFile /dev/null
